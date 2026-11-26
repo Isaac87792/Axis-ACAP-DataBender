@@ -22,7 +22,7 @@ One line per rule: an On switch, the rule's name and summary, its source app wit
 ![Rules table](docs/screenshots/rules.png)
 
 ### Rule editor
-Every setting of a rule in one dialog: the source event (search the camera's own event list), a filter (for example only cars, or only input port 1), On, Off or both, a dwell time, the name to send, a **Context** text with fields and formulas such as `Person #{count} today at the gate`, and a wait before firing again. "How this rule works" says it back in plain words.
+Every setting of a rule in one dialog: the source event (search the camera's own event list), a filter (for example only cars, or only input port 1), On, Off or both, a dwell time, the name to send, a **Context** text with fields and formulas such as `Person #{count} today at the gate`, a Port Testing match or port check to start each time the rule fires (**Also do**), and a wait before firing again. "How this rule works" says it back in plain words.
 
 ![Rule editor](docs/screenshots/rule-editor.png)
 
@@ -52,6 +52,15 @@ Data Bender and [Resource Monitor](https://github.com/Isaac87792/Axis-ACAP-Resou
 - **See the whole picture.** When Resource Monitor runs on the camera, the resource bar has a link to its graphs, where Data Bender shows up with every other app.
 - **One look, one way of working.** Both use the same dark layout, colours (the camera in grey, apps in yellow), Help (i) buttons, Test and Log buttons, and Workflow view.
 - **Set up many cameras the same way.** Both have "Copy settings to other cameras" with the same file format, Replace or Merge, a preview and Undo. Build the rules and alerts on one camera, then copy both apps' settings to the rest.
+
+## Works with Port Testing
+When the Port Testing app runs on the same camera, a rule can also start a match (Pong or Battleship, 1 to 15 minutes) or a port check with one of Port Testing's devices each time it fires, for example to test the link to another camera when a door opens.
+- **No password kept.** Data Bender asks Port Testing on the camera itself, with the camera's own service account.
+- **Same rules as the event.** The dwell time and the wait before firing again apply, and no second match starts while one is playing.
+- **In the log.** Each result is there in plain words: started, already playing, or why it could not start.
+- **Its events as sources.** Port Testing's own events (Match playing, Link trouble, Match won) can be a rule's source like any other.
+
+Without Port Testing, the rule shows "Port Testing not installed"; a start saved with a rule is kept and does nothing until it is installed.
 
 ## Built to be a good guest on the camera
 
