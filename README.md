@@ -75,6 +75,7 @@ Without Port Testing, the rule shows "Port Testing not installed"; a start saved
 - An Axis camera with an **ARTPEC-8 or newer** chip (aarch64).
 - **AXIS OS 12.8 up to AXIS OS 13.**
 - AXIS OS 13 runs only apps signed by Axis: use a signed release. A package you build yourself is unsigned and needs the camera setting **Allow unsigned apps** (AXIS OS 12).
+- **On AXIS OS 12 older than 12.8?** Upgrade to 12.8 or later before you move to AXIS OS 13, then reinstall this app. Older 12.x firmware doesn't keep the app's signature, so after the move to AXIS OS 13 the app shows as unsigned and may not run.
 
 ## Install
 
