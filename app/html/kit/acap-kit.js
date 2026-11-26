@@ -1,5 +1,5 @@
 /*
- * acap-kit.js 1.4.0 - the shared parts of every one of these ACAP pages. Copy html/kit/ unchanged.
+ * acap-kit.js 1.4.1 - the shared parts of every one of these ACAP pages. Copy html/kit/ unchanged.
  * Needs acap-kit.css (and kit/acap-theme.js first in <head>, so the page starts in the right theme), and the camera side (kit.h, kit_*.c) for the resources, processes, apps
  * and log endpoints. No libraries.
  *
@@ -24,11 +24,13 @@
  *   Kit.configio(el, opts)       "Copy settings to other cameras": export, import, undo (1.3.0; kit_configio.c)
  *   Kit.color('--kit-c-apps')    a colour token's value under the current theme (1.3.0; the tokens are in acap-kit.css)
  *   Kit.theme.current(), .source(), .onChange(fn), .refresh()   light or dark, following the camera (1.4.0)
+ *   Kit.dock()                   square a box's top corners while it touches the top bar; runs by itself on
+ *                                scroll, resize and tab change (1.4.1)
  */
 (function () {
 'use strict';
 
-const VERSION = '1.4.0';   /* the same as KIT_VERSION in kit.h */
+const VERSION = '1.4.1';   /* the same as KIT_VERSION in kit.h */
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -298,6 +300,10 @@ function start(opts) {
 	document.title = opts.name;
 
 	$$('.rb', top).forEach(b => { b.onclick = () => toggleDrawer(b.dataset.k); });
+	addEventListener('scroll', dock, { passive: true });
+	addEventListener('resize', dock);
+	document.addEventListener('click', () => setTimeout(dock, 0));   /* a box that opened or closed moves the ones below it */
+	setTimeout(dock, 0);
 	/* Click only: the details open on a click and close on a click elsewhere or Esc */
 	document.addEventListener('click', e => { if (K.open && !e.target.closest('#kit-drawer, .rb')) toggleDrawer(K.open); });
 	escOrder.drawer = () => { if (!K.open) return false; const b = $('.rb[data-k="' + K.open + '"]'); toggleDrawer(K.open); if (b) b.focus(); return true; };
@@ -334,6 +340,17 @@ function showTab(id) {
 	$$('[data-kit-page]').forEach(p => { p.hidden = p.dataset.kitPage !== id; });
 	if (history.replaceState) history.replaceState(null, '', '#' + id);
 	if (K.opts.onTab) K.opts.onTab(id);
+	setTimeout(dock, 0);
+}
+
+/* 1.4.1: a box whose top meets the bottom of the sticky top bar (scrolled up under it) gets square top corners
+ * there (.docked); round again once it moves away */
+function dock() {
+	const bar = $('#kit-top'), edge = bar ? bar.getBoundingClientRect().bottom : 0;
+	$$('.acap-panel').forEach(p => {
+		const r = p.getBoundingClientRect();
+		p.classList.toggle('docked', r.height > 0 && r.top <= edge + 1 && r.bottom > edge);
+	});
 }
 
 async function pollResources() {
@@ -998,5 +1015,5 @@ const Theme = (() => {
 })();
 
 window.Kit = { version: VERSION, start, showTab, items, footer, log, ask, editor, modal, toast, seg, exportJSON, importJSON, get, post, every, apps, app, onApps, fmt, esc, $, $$, device: () => K.device, resources: () => K.res,
-	help: Help.add, helpScan: Help.scan, helpClose: Help.close, configio, color, theme: Theme };
+	help: Help.add, helpScan: Help.scan, helpClose: Help.close, configio, color, theme: Theme, dock };
 })();

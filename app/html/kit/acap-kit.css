@@ -1,5 +1,5 @@
 /*
- * acap-kit.css 1.4.0 - the shared look and parts of every one of these ACAP pages.
+ * acap-kit.css 1.4.1 - the shared look and parts of every one of these ACAP pages.
  * Copy html/kit/ unchanged into each ACAP; page-specific styles go in the app's own css/app.css.
  *
  * Look: the "fluent" look of AXIS Object Analytics and AXIS OS 12 (values modeled on Axis's own apps):
@@ -227,7 +227,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg-page); color: var(--text); font: 14px/20px var(--font); overflow-x: hidden; }
+html, body { margin: 0; background: var(--bg-page); color: var(--text); font: 14px/20px var(--font); overflow-x: clip; }   /* clip, not hidden (1.4.1): hidden made a scroll box, so the top bar did not stay at the top */
 a { color: var(--link); }
 a:hover { color: var(--link-hover); }
 [hidden] { display: none !important; }
@@ -330,9 +330,12 @@ button.acap-ver:hover, button.acap-ver.open { color: var(--text); border-color: 
 @keyframes kit-pulse { 50% { opacity: .35; } }
 
 /*===================================================== Page and panels */
-.acap-main { padding: 18px 24px 40px; }   /* fills the window at any width */
+.acap-main { padding: 17px 24px 40px; }   /* fills the window at any width; 17 px from the tab bar to the first box (1.4.1) */
 .acap-lead { color: var(--text-3); margin: 0 0 14px; }
 .acap-panel { background: var(--bg-panel); border-radius: var(--radius-large); box-shadow: var(--shadow), inset 0 0 0 1px var(--panel-edge); padding: 14px 18px; margin-bottom: 16px; min-width: 0; }
+/* 1.4.1: a box scrolled up against the sticky top bar gets square top corners where they meet (Kit sets .docked).
+ * Every page starts with its box, no intro text above it: that text goes in the box's Help (i). */
+.acap-panel.docked { border-top-left-radius: 0; border-top-right-radius: 0; }
 .acap-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
 .acap-panel-head .head-l, .acap-panel-head .head-r { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .acap-panel-head .head-r { gap: 4px; }
