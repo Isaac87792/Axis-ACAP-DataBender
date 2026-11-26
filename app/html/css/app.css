@@ -1,4 +1,6 @@
-/* Data Bender page styles: only what is Data Bender's own. Colours are the kit's tokens (acap-kit.css :root),
+/* Data Bender page styles: only what is Data Bender's own. Colours are the kit's tokens (acap-kit.css), which
+ * have a dark and a light value: the page follows the camera's theme (UI kit 1.4.0). Yellow is a fill only
+ * (--brand); yellow words use --brand-text and yellow lines --brand-edge, so they read on white too.
  * the same scheme as Resource Monitor: the camera grey, all apps yellow (both drawn by the kit's resource bar).
  * The shared look and parts (header, resource bar, item table, log, dialogs, buttons) are the
  * ACAP UI kit's, in kit/acap-kit.css, copied unchanged from the ACAP UI kit. */
@@ -21,8 +23,8 @@
 .dlg-label { display: block; font-weight: 600; color: var(--text-2); margin: 12px 0 6px; }
 .dialog textarea { font: 13px/1.5 var(--font-mono); min-height: 64px; }
 .tokens { display: flex; flex-wrap: wrap; gap: 6px; }
-.token { background: var(--bg-input); border: 1px solid var(--stroke-soft); border-radius: 12px; padding: 2px 10px; font: 12px var(--font-mono); color: var(--brand); cursor: pointer; }
-.token:hover { border-color: var(--brand); }
+.token { background: var(--bg-input); border: 1px solid var(--stroke-soft); border-radius: 12px; padding: 2px 10px; font: 12px var(--font-mono); color: var(--brand-text); cursor: pointer; }
+.token:hover { border-color: var(--brand-edge); }
 .counter { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 .counter span { display: block; color: var(--text-3); font-size: 12px; margin-bottom: 4px; }
 .preview { background: var(--bg-input); border-radius: var(--radius); padding: 10px 12px; font: 13px var(--font-mono); overflow-wrap: anywhere; }
@@ -37,7 +39,7 @@
 .how { margin-top: 16px; background: var(--bg-input); border-left: 0; padding: 12px 14px; }
 .how-title { font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
 .how p { margin: 0 0 6px; line-height: 1.5; }
-.how b { color: var(--brand); font-weight: 600; }
+.how b { color: var(--brand-text); font-weight: 600; }
 
 /* Source picker: a search box with a list under it */
 .picker { position: relative; }
@@ -63,7 +65,7 @@
 .wf-rules { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .wf-rule { display: flex; gap: 8px; align-items: flex-start; text-align: left; background: transparent; border: 1px solid transparent; border-radius: var(--radius); padding: 6px 8px; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
 .wf-rule:hover { background: var(--bg-subtle-hover); }
-.wf-rule.on { border-color: var(--brand); background: var(--bg-input); }
+.wf-rule.on { border-color: var(--brand-edge); background: var(--bg-input); }
 .wf-rule b { font-weight: 600; overflow-wrap: anywhere; display: block; }
 .wf-rule .sub { display: block; color: var(--text-3); font-size: 11.5px; overflow-wrap: anywhere; }
 .wf-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; margin-top: 5px; background: var(--text-4); }
@@ -94,12 +96,18 @@
 .wf-canvas .k-do > rect, .wf-canvas .k-do > polygon { fill: var(--wf-do); }
 .wf-canvas .k-end > rect, .wf-canvas .k-end > polygon { fill: var(--wf-end); }
 .wf-canvas .k-when > text { fill: var(--on-brand); }   /* dark text on the light orange */
+/* Light theme: the shape colours are darker, so text on them is white (--bg-panel), and dark on the light
+ * greys of the step and end shapes */
+[data-theme="light"] .wf-canvas .node > text, [data-theme="light"] .wf-canvas .tick text { fill: var(--bg-panel); }
+[data-theme="light"] .wf-canvas .k-flow > text, [data-theme="light"] .wf-canvas .k-end > text { fill: var(--text); }
 .wf-props { background: var(--bg-input); border: 1px solid var(--stroke-soft); border-radius: 10px; padding: 10px 12px; min-width: 0; }
 .wf-props h4 { margin: 0 0 6px; font-size: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .wf-props .kind { font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 6px; color: var(--text); }
 .wf-props .kind.dark { color: var(--on-brand); }
 .wf-props .kind.k-when { background: var(--wf-when); } .wf-props .kind.k-decide { background: var(--wf-decide); } .wf-props .kind.k-flow { background: var(--wf-flow); }
 .wf-props .kind.k-do { background: var(--wf-do); } .wf-props .kind.k-end { background: var(--wf-end); }
+[data-theme="light"] .wf-props .kind, [data-theme="light"] .wf-props .kind.dark { color: var(--bg-panel); }
+[data-theme="light"] .wf-props .kind.k-flow, [data-theme="light"] .wf-props .kind.k-end { color: var(--text); }
 .wf-props .p-l { display: block; color: var(--text-3); font-size: 12px; margin: 10px 0 3px; }
 .wf-props input[type=text], .wf-props select { width: 100%; box-sizing: border-box; }
 .wf-props .inline2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 6px; }
@@ -107,7 +115,7 @@
 .wf-props .p-light { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 .wf-props .how { margin-top: 12px; border-top: 1px solid var(--stroke-soft); padding-top: 8px; font-size: 12.5px; color: var(--text-2); line-height: 1.45; background: none; padding-left: 0; padding-right: 0; }
 .wf-props .how p { margin: 0 0 6px; }
-.wf-props .how b { color: var(--brand); font-weight: 600; }
+.wf-props .how b { color: var(--brand-text); font-weight: 600; }
 .wf-props code { font-size: 12px; overflow-wrap: anywhere; }
 
 @media (max-width: 900px) {
@@ -122,5 +130,5 @@
 /* Workflow rules list: tiles that lift on hover; the open rule is marked in the brand colour, like the kit's selected tab */
 .wf-rule { transition: box-shadow .15s, transform .15s, background .15s; }
 .wf-rule:hover { transform: translateY(-2px); box-shadow: var(--shadow-lift); background: var(--grad-panel); }
-.wf-rule.on { background: var(--brand-dim); border-color: var(--brand); box-shadow: var(--shadow), 0 0 12px var(--brand-dim); }
+.wf-rule.on { background: var(--brand-dim); border-color: var(--brand-edge); box-shadow: var(--shadow), 0 0 12px var(--brand-dim); }
 @media (prefers-reduced-motion: reduce) { .wf-rule { transition: none; } .wf-rule:hover { transform: none; } }

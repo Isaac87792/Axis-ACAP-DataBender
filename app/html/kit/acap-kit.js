@@ -1,6 +1,6 @@
 /*
- * acap-kit.js 1.3.0 - the shared parts of every one of these ACAP pages. Copy html/kit/ unchanged.
- * Needs acap-kit.css, and the camera side (kit.h, kit_*.c) for the resources, processes, apps
+ * acap-kit.js 1.4.0 - the shared parts of every one of these ACAP pages. Copy html/kit/ unchanged.
+ * Needs acap-kit.css (and kit/acap-theme.js first in <head>, so the page starts in the right theme), and the camera side (kit.h, kit_*.c) for the resources, processes, apps
  * and log endpoints. No libraries.
  *
  * A page is:   <div id="kit-top"></div>                 header, resource bar, tabs, facts
@@ -22,12 +22,13 @@
  *   Kit.apps(), Kit.app(id), Kit.onApps(cb)   the camera's installed apps, every 5 s
  *   Kit.help(el, title, text), Kit.helpScan(root)   Help (i) buttons (1.2.0)
  *   Kit.configio(el, opts)       "Copy settings to other cameras": export, import, undo (1.3.0; kit_configio.c)
- *   Kit.color('--kit-c-apps')    a data colour token's value (1.3.0; the tokens are in acap-kit.css :root)
+ *   Kit.color('--kit-c-apps')    a colour token's value under the current theme (1.3.0; the tokens are in acap-kit.css)
+ *   Kit.theme.current(), .source(), .onChange(fn), .refresh()   light or dark, following the camera (1.4.0)
  */
 (function () {
 'use strict';
 
-const VERSION = '1.3.0';   /* the same as KIT_VERSION in kit.h */
+const VERSION = '1.4.0';   /* the same as KIT_VERSION in kit.h */
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -942,9 +943,60 @@ function configio(el, o) {
 	return { refresh };
 }
 
-/* 1.3.0 data colours: a kit colour token's value, for drawing on a canvas: Kit.color('--kit-c-apps') -> '#ffcc33' */
+/* 1.3.0 colours: a kit colour token's value under the current theme, for drawing on a canvas:
+ * Kit.color('--kit-c-apps'). Read it again in Kit.theme.onChange, since the value differs per theme. */
 function color(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
+/*---------------------------------------------------- 1.4.0 Light and dark: the page follows the camera's theme
+ * No switch of its own. The theme is, in this order: the camera's saved "theme" in browser storage ("dark" or
+ * "light", plain or JSON-quoted; the camera's web page and this page are the same site), else "?theme=light" or
+ * "?theme=dark" in the address, else the computer's light or dark setting. It is set as data-theme on <html>;
+ * kit/acap-theme.js (first in <head>, the same rule) sets it before the first paint, so nothing flashes.
+ * It follows changes live: the camera's page saving another theme (the storage event, from another tab of the
+ * camera) and the computer's setting. acap-kit.css holds every colour as a token for each theme.
+ *   Kit.theme.current()     'light' or 'dark'
+ *   Kit.theme.source()      'camera', 'address' or 'computer': where the theme came from
+ *   Kit.theme.onChange(fn)  fn(theme, source, changed) after the theme or where it comes from changes, once the
+ *                           new colours apply. changed is true when the theme itself changed: redraw canvases only
+ *                           then, reading colours with Kit.color(). Returns a function that removes fn.
+ *   Kit.theme.refresh()     read it again now
+ * kit/compressing-graph.js follows on its own. */
+const Theme = (() => {
+	const cbs = [];
+	let cur = null, from = null;
+	const ok = v => v === 'light' || v === 'dark';
+	const mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+	function read() {
+		try {
+			let v = localStorage.getItem('theme');
+			try { v = JSON.parse(v); } catch (e) { /* a plain word */ }
+			if (ok(v)) return { theme: v, from: 'camera' };
+		} catch (e) { /* no storage */ }
+		try { const q = new URLSearchParams(location.search).get('theme'); if (ok(q)) return { theme: q, from: 'address' }; } catch (e) { /* no address */ }
+		return { theme: mq && mq.matches ? 'light' : 'dark', from: 'computer' };
+	}
+	function apply() {
+		const r = read(), was = cur, wasFrom = from;
+		from = r.from;
+		cur = r.theme;
+		/* data-theme (and so the graphs, which watch it) changes only when the theme does */
+		if (document.documentElement.getAttribute('data-theme') !== cur) document.documentElement.setAttribute('data-theme', cur);
+		if (!was || (was === cur && wasFrom === from)) return;
+		const changed = was !== cur;
+		cbs.slice().forEach(fn => { try { fn(cur, from, changed); } catch (e) { console.error(e); } });
+	}
+	addEventListener('storage', e => { if (e.key === 'theme' || e.key === null) apply(); });
+	addEventListener('pageshow', apply);
+	if (mq) { if (mq.addEventListener) mq.addEventListener('change', apply); else if (mq.addListener) mq.addListener(apply); }
+	apply();
+	return {
+		current: () => cur,
+		source: () => from,
+		onChange(fn) { cbs.push(fn); return () => { const i = cbs.indexOf(fn); if (i >= 0) cbs.splice(i, 1); }; },
+		refresh: apply
+	};
+})();
+
 window.Kit = { version: VERSION, start, showTab, items, footer, log, ask, editor, modal, toast, seg, exportJSON, importJSON, get, post, every, apps, app, onApps, fmt, esc, $, $$, device: () => K.device, resources: () => K.res,
-	help: Help.add, helpScan: Help.scan, helpClose: Help.close, configio, color };
+	help: Help.add, helpScan: Help.scan, helpClose: Help.close, configio, color, theme: Theme };
 })();
