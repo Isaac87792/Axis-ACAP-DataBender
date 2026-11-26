@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Data Bender</title>
+	<!-- ?v= is set to the app version at build time (tools/build-lab.sh): the camera sends no cache
+	     headers, so without it a browser keeps the old scripts after an update -->
+	<!-- kit/ is the ACAP UI kit, copied unchanged -->
+	<link rel="stylesheet" href="kit/acap-kit.css?v=dev">
+	<link rel="stylesheet" href="css/app.css?v=dev">
+	<script src="kit/acap-kit.js?v=dev"></script>
+	<script src="js/events.js?v=dev"></script>
+	<script src="js/app.js?v=dev"></script>
+</head>
+<body>
+	<!-- Header, resource bar and camera facts: the UI kit (Kit.start) -->
+	<div id="kit-top"></div>
+
+	<main class="acap-main">
+		<section data-kit-page="rules">
+		<p class="acap-lead">Listens to any event on this camera and sends it again under a short name, such as "Person Detected" instead of the long original.</p>
+
+		<section class="acap-panel">
+			<div class="acap-panel-head">
+				<div class="head-l">
+					<h2>Rules</h2><span class="kit-help" data-title="Rules">Each rule listens to one event on this camera and sends it again under the name you give it. What came in and what was sent goes to the log (the Log button shows it).
+To copy the rules to other cameras, use Copy settings to other cameras on the Settings tab.</span>
+					<div class="seg" role="group" aria-label="View"><button type="button" class="on" id="view-table" aria-pressed="true">Table</button><button type="button" id="view-wf" aria-pressed="false">Workflow</button></div>
+				</div>
+				<div class="head-r">
+					<button type="button" id="add-defaults" class="btn">Add default rules</button><span class="kit-help" data-title="Add default rules">Adds Person Detected and Vehicle Detected rules, matched to this camera's Object Analytics scenarios. A rule with no matching scenario is added switched off, without a source event.</span>
+					<button type="button" id="log-btn" class="btn subtle">Log</button>
+					<button type="button" id="add-rule" class="btn">+ Add rule</button>
+				</div>
+			</div>
+			<!-- Table view: the UI kit's item table (Kit.items) -->
+			<div id="table-view"><div id="rules-table"></div></div>
+			<!-- Workflow view: each rule as a flowchart (When > Only if > Condition > Dwell > Reactivation > Send) -->
+			<div id="wf-view" hidden>
+				<div class="wf-tools">
+					<button type="button" class="btn" id="wf-run" aria-pressed="false">Show last trigger</button>
+					<button type="button" class="btn" id="wf-all" aria-pressed="false">Show all steps</button><span class="kit-help" data-title="Show all steps">Steps a rule doesn't use are hidden. Show all steps draws them too, so one can be set up.</span>
+					<button type="button" class="btn" id="wf-test">Test</button>
+					<button type="button" class="btn subtle danger" id="wf-delete">Delete rule</button>
+					<span class="hint small">Changes apply when you press Save.</span>
+				</div>
+				<p class="hint run-note" id="wf-run-note" hidden></p>
+				<div class="wf">
+					<div class="wf-rules" id="wf-rules" role="listbox" aria-label="Rules"></div>
+					<div class="wf-canvas" id="wf-canvas"></div>
+					<div class="wf-props" id="wf-props"></div>
+				</div>
+			</div>
+			<!-- Save and Cancel: the UI kit (Kit.footer) -->
+			<div id="foot"></div>
+		</section>
+
+		<!-- Log: the UI kit (Kit.log), hidden until the Log button shows it -->
+		<section id="log-panel"></section>
+		</section>
+
+		<section data-kit-page="settings" hidden>
+			<!-- Copy settings to other cameras: export, import, undo (the UI kit's Kit.configio; the camera side is the rules section in main.c) -->
+			<section id="copy"></section>
+		</section>
+	</main>
+
+	<!-- Rule popup: every setting of one rule -->
+	<div id="rule-overlay" class="overlay" hidden>
+		<div class="dialog rule-dialog" role="dialog" aria-modal="true" aria-labelledby="rd-title">
+			<div class="dlg-head">
+				<h3 id="rd-title">Rule</h3>
+				<label class="switch" title="Enabled"><input type="checkbox" id="rd-enabled" aria-label="Rule enabled"><span class="track"></span></label>
+			</div>
+			<p class="hint">Changes apply when you press Save on the page.</p>
+			<div class="form">
+				<div class="section">What it listens to</div>
+				<div class="lbl">Source event name</div><div id="rd-source"></div>
+				<div class="lbl">Filter</div><div id="rd-filter"></div>
+				<div class="lbl">Condition</div><div id="rd-cond"></div>
+				<div class="lbl"><label for="rd-dwell">Dwell time</label><span class="kit-help" data-title="Dwell time">The condition must last this long before the rule fires. If it ends sooner, nothing is sent.
+A source with no On/Off state (Triggered) has nothing to time.</span></div>
+				<div class="inline"><input type="text" id="rd-dwell" inputmode="decimal" aria-label="Dwell time"><select id="rd-dwell-unit" aria-label="Dwell unit"><option value="1">seconds</option><option value="60">minutes</option><option value="3600">hours</option><option value="86400">days</option></select><span class="hint">0 = fire at once</span></div>
+
+				<div class="section">What it sends</div>
+				<div class="lbl"><label for="rd-name">Event name to send</label></div><input type="text" id="rd-name" maxlength="64" placeholder="e.g. Person Detected">
+				<div class="help" id="rd-sent-as"></div>
+				<div class="lbl">Context</div><div class="ctx-line"><code id="rd-ctx-text"></code><button type="button" class="btn" id="rd-ctx-edit">Edit context…</button></div>
+
+				<div class="section">Reactivation threshold</div>
+				<div class="lbl"><label for="rd-wait">Wait before firing again</label><span class="kit-help" data-title="Wait before firing again">After this rule sends an event, new triggers are held back until this time has passed.</span></div>
+				<div class="inline"><input type="text" id="rd-wait" inputmode="decimal" aria-label="Wait"><select id="rd-unit" aria-label="Unit"><option value="1">seconds</option><option value="60">minutes</option><option value="3600">hours</option></select><span class="hint">0 = no wait</span></div>
+				<div class="lbl"><label for="rd-from">Count the wait from</label></div>
+				<select id="rd-from"><option value="sent">When the event is sent</option><option value="off">When the source turns Off</option></select>
+				<div class="lbl"><label for="rd-held">Triggers held back</label><span class="kit-help" data-title="Triggers held back">In the Context, {held} gives how many were held back during the last wait.</span></div>
+				<select id="rd-held"><option value="drop">Drop them</option><option value="send">Send one when the wait ends, if any came in</option></select>
+			</div>
+			<div class="how"><div class="how-title">How this rule works</div><div id="rd-how"></div></div>
+			<div class="dlg-actions">
+				<button type="button" class="btn subtle danger" id="rd-delete">Delete rule</button>
+				<span class="spacer"></span>
+				<button type="button" class="btn" id="rd-test">Test</button><span class="kit-help" data-title="Test">Sends this rule's event now, with the saved settings.</span>
+				<button type="button" class="btn" id="rd-cancel">Cancel</button>
+				<button type="button" class="btn primary" id="rd-done">Done</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- Context popup: one, shared by all rules -->
+	<div id="ctx-overlay" class="overlay" hidden>
+		<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="ctx-title">
+			<h3><span id="ctx-title">Context</span><span class="kit-help" data-title="Context">Sent with the event as its context (description) field.</span></h3>
+			<label class="dlg-label" for="ctx-text">Text</label>
+			<textarea id="ctx-text" maxlength="500" placeholder="e.g. Person #{count} today on {camera} at {time}"></textarea>
+			<div class="dlg-label">Fields</div>
+			<div class="tokens" id="ctx-tokens"></div>
+			<div class="dlg-label" id="ctx-src-label">Fields of the source event</div>
+			<div class="tokens" id="ctx-src-tokens"></div>
+			<div class="dlg-label">Counter ({count})</div>
+			<div class="counter">
+				<label><span>Start at</span><input type="text" id="ctx-start" inputmode="decimal"></label>
+				<label><span>Add each time</span><input type="text" id="ctx-step" inputmode="decimal"></label>
+				<label><span>Reset</span><select id="ctx-reset"><option value="daily">Every day at midnight</option><option value="hourly">Every hour</option><option value="never">Never</option><option value="save">When the rule is saved</option></select></label>
+				<label><span>Count when</span><select id="ctx-count"><option value="fires">The rule fires</option><option value="every">Every source event</option></select></label>
+			</div>
+			<div class="dlg-label">Preview</div>
+			<div class="preview"><small>The next event would send</small><span id="ctx-preview">—</span></div>
+			<div class="dlg-actions">
+				<button type="button" class="btn subtle" id="ctx-clear">Clear context</button>
+				<span class="spacer"></span>
+				<button type="button" class="btn" id="ctx-cancel">Cancel</button>
+				<button type="button" class="btn primary" id="ctx-done">Done</button>
+			</div>
+		</div>
+	</div>
+
+</body>
+</html>
