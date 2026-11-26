@@ -336,6 +336,7 @@ button.acap-ver:hover, button.acap-ver.open { color: var(--text); border-color: 
 /* 1.4.1: a box scrolled up against the sticky top bar gets square top corners where they meet (Kit sets .docked).
  * Every page starts with its box, no intro text above it: that text goes in the box's Help (i). */
 .acap-panel.docked { border-top-left-radius: 0; border-top-right-radius: 0; }
+.acap-panel { scroll-margin-top: calc(var(--kit-top-h, 0px) + 17px); }   /* a jump to a box stops 17 px below the top bar */
 .acap-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
 .acap-panel-head .head-l, .acap-panel-head .head-r { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .acap-panel-head .head-r { gap: 4px; }

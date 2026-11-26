@@ -347,6 +347,8 @@ function showTab(id) {
  * there (.docked); round again once it moves away */
 function dock() {
 	const bar = $('#kit-top'), edge = bar ? bar.getBoundingClientRect().bottom : 0;
+	/* The bar's height, so a jump to a box (the Log button) stops 17 px below the bar, not under it */
+	document.documentElement.style.setProperty('--kit-top-h', (bar ? bar.offsetHeight : 0) + 'px');
 	$$('.acap-panel').forEach(p => {
 		const r = p.getBoundingClientRect();
 		p.classList.toggle('docked', r.height > 0 && r.top <= edge + 1 && r.bottom > edge);
