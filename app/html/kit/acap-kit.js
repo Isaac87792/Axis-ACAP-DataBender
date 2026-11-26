@@ -1,5 +1,5 @@
 /*
- * acap-kit.js 1.4.2 - the shared parts of every one of these ACAP pages. Copy html/kit/ unchanged.
+ * acap-kit.js 1.4.3 - the shared parts of every one of these ACAP pages. Copy html/kit/ unchanged.
  * Needs acap-kit.css (and kit/acap-theme.js first in <head>, so the page starts in the right theme), and the camera side (kit.h, kit_*.c) for the resources, processes, apps
  * and log endpoints. No libraries.
  *
@@ -30,7 +30,7 @@
 (function () {
 'use strict';
 
-const VERSION = '1.4.2';   /* the same as KIT_VERSION in kit.h */
+const VERSION = '1.4.3';   /* the same as KIT_VERSION in kit.h */
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -324,9 +324,8 @@ function start(opts) {
 		v.dataset.help = 'Version ' + (setup.version || '?') + ', made with UI kit ' + VERSION + '.';
 		$('#kit-model').textContent = K.device.model && K.device.model !== 'Unknown' ? 'AXIS ' + K.device.model.replace(/^AXIS\s+/i, '') : 'Axis camera';
 		$('#kit-os').textContent = K.device.firmware || '–';
-		const chip = K.device.platform && K.device.platform !== 'Unknown' ? K.device.platform.replace(/^axis\s+/i, '').toUpperCase() : '';
-		$('#kit-chip').textContent = chip;
-		$('#kit-chip-w').hidden = !chip;
+		K.chip = K.device.platform && K.device.platform !== 'Unknown' ? K.device.platform.replace(/^axis\s+/i, '').toUpperCase() : '';
+		drawChip();
 	}).catch(() => { $('#kit-model').textContent = 'Axis camera'; });
 
 	every(2000, pollResources);
@@ -355,8 +354,15 @@ function dock() {
 	});
 }
 
+/* 1.4.3: the header's facts are model, AXIS OS, chip and cores, uptime, Live (no serial number): "ARTPEC-8, 4 cores" */
+function drawChip() {
+	const n = K.res && K.res.cores, t = (K.chip || '') + (K.chip && n ? ', ' : '') + (n ? n + ' cores' : '');
+	$('#kit-chip').textContent = t;
+	$('#kit-chip-w').hidden = !t;
+}
+
 async function pollResources() {
-	try { K.res = await get('resources'); K.resOk = Date.now(); drawBar(); }
+	try { K.res = await get('resources'); K.resOk = Date.now(); drawBar(); drawChip(); }
 	catch (e) { drawLive(); throw e; }
 	if (K.open) drawDrawer();
 }
