@@ -6,7 +6,10 @@
  * can listen to "Person Detected" instead of the long original.
  *
  * Settings (settings/settings.json, saved to localdata/settings.json):
- *   rules[] - { id, enabled, name, object, source{name, topic0..topic3} }
+ *   rules[] - { id, enabled, name, object, source{name, topic0..topic3}, portTesting? }
+ *   portTesting (1.6.0, optional) - { on, camera, game: pong|battleship|check, minutes, speed, encrypt,
+ *                proto, port }: each time the rule fires, ask Port Testing on this camera to start that
+ *                (see "Also do: Port Testing" below). Rules saved before 1.6.0 have none and load unchanged.
  *
  * The relay declares its events on its own event handler, not through the
  * ACAP.c wrapper, so settings can change at runtime without editing ACAP.c.
@@ -117,6 +120,17 @@ typedef struct {
 	int    heldLast;     /* held back during the previous wait, for {held} */
 	guint  rearmTimer;
 	gchar* error;
+	/* Also do: start a Port Testing match or check each time the rule fires */
+	int    ptOn;
+	gchar* ptCamera;      /* the device's name on Port Testing's Devices tab */
+	char   ptGame[12];    /* pong, battleship or check */
+	int    ptMinutes;     /* 1-15, matches only */
+	char   ptSpeed[8];    /* slow, normal or fast (Pong) */
+	int    ptEncrypt;     /* Battleship */
+	char   ptProto[4];    /* tcp or udp (check) */
+	int    ptPort;        /* 1-65535 (check); 0 = none */
+	gchar* ptLast;        /* the last result, for the status */
+	char   ptLastAt[32];
 } Rule;
 
 #define MODE_BOTH 0
@@ -210,6 +224,10 @@ static void publish_status(void) {
 		cJSON_AddStringToObject(s, "lastFired", r->lastFired);
 		cJSON_AddStringToObject(s, "activeSince", r->sentState == 1 ? r->activeSince : "");
 		if (r->error) cJSON_AddStringToObject(s, "error", r->error);
+		if (r->ptLast) {
+			cJSON_AddStringToObject(s, "portTesting", r->ptLast);
+			cJSON_AddStringToObject(s, "portTestingAt", r->ptLastAt);
+		}
 		cJSON_AddItemToObject(list, r->id, s);
 	}
 	ACAP_STATUS_SetObject("relay", "rules", list);
@@ -357,6 +375,7 @@ static int testing = 0;   /* 1 while a Test press sends: the event goes out, the
 #define HELD    3   /* held back: the rule is waiting before it can fire again */
 static int bypassWait = 0;   /* 1 while sending the one held-back event at the end of a wait */
 static int fire_now(Rule* r, int isTest, const char* received, const char* note);
+static void pt_fire(Rule* r);   /* Also do: Port Testing (below) */
 
 static int rearm_active(Rule* r) {
 	return (r->rearmUntil && g_get_monotonic_time() < r->rearmUntil) || r->waitingOff;
@@ -475,6 +494,9 @@ static int send_state(Rule* r) {
 		set_error(r, NULL);
 		sent = SENT;
 		if (fires && !testing) start_wait(r);
+		/* Also do: the rule fired (a Test press too), so start Port Testing's match or check. A held-back
+		 * firing returned above, so the reactivation wait applies to it as to the event. */
+		if (fires) pt_fire(r);
 	} else {
 		set_error(r, "Could not send the event");
 	}
@@ -609,6 +631,8 @@ static void free_rule(Rule* r) {
 	g_strfreev(r->sourceKeys);
 	g_free(r->source);
 	g_free(r->error);
+	g_free(r->ptCamera);
+	g_free(r->ptLast);
 	g_free(r);
 }
 
@@ -996,6 +1020,27 @@ static void make_topic(Rule* r, Rule** others, int count) {
 	g_strlcpy(r->topic, r->id, sizeof(r->topic));
 }
 
+/* A rule's "portTesting" (Also do): kept off unless it is switched on and names a device. Values out of
+ * range are brought into it; Port Testing checks them again and says why when it can't start. */
+static void pt_read(Rule* r, cJSON* pt) {
+	g_free(r->ptCamera);
+	r->ptCamera = NULL;
+	r->ptOn = 0;
+	if (!cJSON_IsObject(pt)) return;
+	const char* g = json_string(pt, "game");
+	g_strlcpy(r->ptGame, same_text(g, "battleship") ? "battleship" : same_text(g, "check") ? "check" : "pong", sizeof(r->ptGame));
+	r->ptCamera = clean_text(json_string(pt, "camera"), MAX_NAME_CHARS);
+	cJSON* n = cJSON_GetObjectItem(pt, "minutes");
+	r->ptMinutes = cJSON_IsNumber(n) ? CLAMP((int)n->valuedouble, 1, 15) : 2;
+	const char* s = json_string(pt, "speed");
+	g_strlcpy(r->ptSpeed, same_text(s, "fast") ? "fast" : same_text(s, "slow") ? "slow" : "normal", sizeof(r->ptSpeed));
+	r->ptEncrypt = cJSON_IsTrue(cJSON_GetObjectItem(pt, "encrypt"));
+	g_strlcpy(r->ptProto, same_text(json_string(pt, "proto"), "udp") ? "udp" : "tcp", sizeof(r->ptProto));
+	n = cJSON_GetObjectItem(pt, "port");
+	r->ptPort = cJSON_IsNumber(n) && n->valuedouble >= 1 && n->valuedouble <= 65535 ? (int)n->valuedouble : 0;
+	r->ptOn = cJSON_IsTrue(cJSON_GetObjectItem(pt, "on")) && *r->ptCamera;
+}
+
 static gboolean apply_settings(gpointer user_data) {
 	(void)user_data;
 	g_atomic_int_set(&applyPending, 0);
@@ -1127,6 +1172,7 @@ static gboolean apply_settings(gpointer user_data) {
 		g_free(r->ctxTemplate);
 		r->ctxTemplate = cText;
 		r->ctrStart = cStart; r->ctrStep = cStep; r->ctrReset = cReset; r->ctrEvery = cEvery;
+		pt_read(r, cJSON_GetObjectItem(item, "portTesting"));
 		/* A context field added or removed changes what the event carries: publish it again */
 		if (!isNew && hadContext != (cText != NULL)) sendChanged = 1;
 		if (isNew && savedCounters) {   /* counter kept from before a restart */
@@ -1232,17 +1278,19 @@ static void Settings_Updated_Callback(const char* service, cJSON* data) {
 
 #define EVENTS_MAX_BYTES (8 * 1024 * 1024)
 
-static gchar* vapixLogin = NULL;   /* "user:password" of this app's own VAPIX service account */
+static gchar* vapixLogin = NULL;   /* "user:password" of this app's own VAPIX service account (web thread) */
 
-static gchar* service_login(void) {
+/* A login of this app's VAPIX service account. Each thread that calls the camera asks for its own
+ * account name (web thread "databender-events", the Port Testing worker "databender-start"). */
+static gchar* service_login(const char* account) {
 	GError* error = NULL;
 	GDBusConnection* bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
-	if (!bus) { LOG_WARN("Event list: no system bus: %s\n", error ? error->message : "?"); g_clear_error(&error); return NULL; }
+	if (!bus) { LOG_WARN("Service account: no system bus: %s\n", error ? error->message : "?"); g_clear_error(&error); return NULL; }
 	GVariant* r = g_dbus_connection_call_sync(bus, "com.axis.HTTPConf1", "/com/axis/HTTPConf1/VAPIXServiceAccounts1",
-		"com.axis.HTTPConf1.VAPIXServiceAccounts1", "GetCredentials", g_variant_new("(s)", "databender-events"),
+		"com.axis.HTTPConf1.VAPIXServiceAccounts1", "GetCredentials", g_variant_new("(s)", account),
 		NULL, G_DBUS_CALL_FLAGS_NONE, 3000, NULL, &error);
 	g_object_unref(bus);
-	if (!r) { LOG_WARN("Event list: no service account: %s\n", error ? error->message : "?"); g_clear_error(&error); return NULL; }
+	if (!r) { LOG_WARN("Service account %s: none: %s\n", account, error ? error->message : "?"); g_clear_error(&error); return NULL; }
 	const char* text = NULL;
 	g_variant_get(r, "(&s)", &text);
 	gchar* login = text && strchr(text, ':') ? g_strdup(text) : NULL;
@@ -1267,7 +1315,7 @@ static gchar* events_xml(void) {
 		"<soap:Envelope xmlns:aev=\"http://www.axis.com/vapix/ws/event1\" xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\">"
 		"<soap:Body><aev:GetEventInstances/></soap:Body></soap:Envelope>";
 	for (int attempt = 0; attempt < 2; attempt++) {
-		if (!vapixLogin) vapixLogin = service_login();
+		if (!vapixLogin) vapixLogin = service_login("databender-events");
 		if (!vapixLogin) return NULL;
 		CURL* c = curl_easy_init();
 		if (!c) return NULL;
@@ -1294,6 +1342,277 @@ static gchar* events_xml(void) {
 		if (code != 401) return NULL;
 		g_free(vapixLogin);   /* the login went stale: get it again once */
 		vapixLogin = NULL;
+	}
+	return NULL;
+}
+
+/*-----------------------------------------------------
+ * Also do: Port Testing (Data Bender 1.6.0)
+ * Each time a rule with portTesting.on fires (after its dwell and reactivation wait, as for the event it
+ * sends; a Test press too), Data Bender POSTs to Port Testing's start endpoint on this camera
+ * (/local/port_testing/start) as its own VAPIX service account, so no password is kept:
+ *   {"camera","game":"pong"|"battleship"|"check","minutes"?,"speed"?,"encrypt"?,"proto"?,"port"?}
+ * Answers: 200 {"ok":true,"message"}, 409 when a match (or check) is already running, 400 with the reason
+ * as text. The call runs on one worker thread with a 15 s limit, so the main loop never waits; at most
+ * PT_QUEUE_MAX starts wait their turn, more are skipped. Each result goes to the log and the rule's status.
+ * Without Port Testing installed, or not running, the setting is kept and does nothing; the log says so.
+ *-----------------------------------------------------*/
+#define PT_PACKAGE   "port_testing"
+#define PT_QUEUE_MAX 4
+#define PT_TIMEOUT_S 15L
+
+static GThreadPool* ptPool = NULL;
+static gchar* ptLogin = NULL;   /* the worker's service account login: worker thread only */
+
+typedef struct {
+	gchar* id;      /* the rule's id and name, for the log and status */
+	gchar* item;
+	gchar* body;    /* the JSON sent */
+	gchar* what;    /* "Pong with Q1728 test" */
+	int    check;
+	int    minutes;
+} PtJob;
+
+typedef struct { gchar* id; gchar* text; } PtDone;
+
+/* A call to this camera's own web server as this app's service account: GET when json is NULL, else a
+ * JSON POST. *login is the calling thread's login (asked for under account, again once when it went
+ * stale). Returns the answer (g_free) with its HTTP code, or NULL with *err when none came. */
+static gchar* local_call(gchar** login, const char* account, const char* path, const char* json, long timeoutS, long* code, gchar** err) {
+	*code = 0;
+	for (int attempt = 0; attempt < 2; attempt++) {
+		if (!*login) *login = service_login(account);
+		if (!*login) { *err = g_strdup("Data Bender has no service account login"); return NULL; }
+		CURL* c = curl_easy_init();
+		if (!c) { *err = g_strdup("out of memory"); return NULL; }
+		GString* out = g_string_new(NULL);
+		gchar* url = g_strdup_printf("http://127.0.0.12%s", path);
+		struct curl_slist* head = json ? curl_slist_append(NULL, "Content-Type: application/json") : NULL;
+		curl_easy_setopt(c, CURLOPT_URL, url);
+		curl_easy_setopt(c, CURLOPT_USERPWD, *login);
+		curl_easy_setopt(c, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC);
+		if (json) {
+			curl_easy_setopt(c, CURLOPT_HTTPHEADER, head);
+			curl_easy_setopt(c, CURLOPT_POSTFIELDS, json);
+		}
+		curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, gstring_write);
+		curl_easy_setopt(c, CURLOPT_WRITEDATA, out);
+		curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 3L);
+		curl_easy_setopt(c, CURLOPT_TIMEOUT, timeoutS);
+		curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
+		CURLcode res = curl_easy_perform(c);
+		curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, code);
+		curl_slist_free_all(head);
+		curl_easy_cleanup(c);
+		g_free(url);
+		if (res != CURLE_OK) {
+			*err = res == CURLE_OPERATION_TIMEDOUT ? g_strdup_printf("no answer in %ld s", timeoutS) : g_strdup(curl_easy_strerror(res));
+			g_string_free(out, TRUE);
+			return NULL;
+		}
+		if (*code != 401 || attempt) return g_string_free(out, FALSE);
+		g_string_free(out, TRUE);
+		g_free(*login);   /* the login went stale (a refused call started nothing): get it again once */
+		*login = NULL;
+	}
+	return NULL;
+}
+
+/* "Pong with Q1728 test", "Port check TCP 443 with Q1728 test" */
+static gchar* pt_what(Rule* r) {
+	if (strcmp(r->ptGame, "check") == 0)
+		return g_strdup_printf("Port check %s %d with %s", strcmp(r->ptProto, "udp") == 0 ? "UDP" : "TCP", r->ptPort, r->ptCamera);
+	return g_strdup_printf("%s with %s", strcmp(r->ptGame, "battleship") == 0 ? "Battleship" : "Pong", r->ptCamera);
+}
+
+/* One log line about Port Testing: the page shows the text in its own row (field "pt") */
+static void pt_log(const char* id, const char* item, const char* text) {
+	cJSON* e = cJSON_CreateObject();
+	cJSON_AddStringToObject(e, "rule", id);
+	cJSON_AddStringToObject(e, "pt", text);
+	kit_log_fields(item, e, "");
+	cJSON_Delete(e);
+}
+
+static void pt_set_last(Rule* r, const char* text) {
+	g_free(r->ptLast);
+	r->ptLast = g_strdup(text);
+	g_strlcpy(r->ptLastAt, ACAP_DEVICE_ISOTime(), sizeof(r->ptLastAt));
+}
+
+/* Main loop: the worker's result into the rule's status */
+static gboolean pt_done(gpointer data) {
+	PtDone* d = data;
+	Rule* r = find_rule(rules, ruleCount, d->id);
+	if (r) { pt_set_last(r, d->text); publish_status(); }
+	g_free(d->id);
+	g_free(d->text);
+	g_free(d);
+	return G_SOURCE_REMOVE;
+}
+
+/* The worker: one start at a time */
+static void pt_job(gpointer data, gpointer user_data) {
+	(void)user_data;
+	PtJob* j = data;
+	long code = 0;
+	gchar* err = NULL;
+	gchar* ans = local_call(&ptLogin, "databender-start", "/local/" PT_PACKAGE "/start", j->body, PT_TIMEOUT_S, &code, &err);
+	gchar* reason = clean_text(ans, 200);   /* a refusal's reason is plain text */
+	gchar* text;
+	if (!ans) {
+		text = g_strdup_printf("Port Testing did not answer (%s): %s not started", err ? err : "no answer", j->what);
+	} else if (code == 200) {
+		cJSON* o = cJSON_Parse(ans);
+		const char* msg = o ? json_string(o, "message") : NULL;
+		text = j->check ? g_strdup_printf("%s: %s", j->what, msg && *msg ? msg : "done")
+		                : g_strdup_printf("Started %s for %d minute%s", j->what, j->minutes, j->minutes == 1 ? "" : "s");
+		cJSON_Delete(o);
+	} else if (code == 409) {
+		text = j->check ? g_strdup_printf("%s not started: %s", j->what, *reason ? reason : "a check is already running")
+		                : g_strdup_printf("Already playing: %s not started", j->what);
+	} else if (code == 400) {
+		text = g_strdup_printf("%s not started: %s", j->what, *reason ? reason : "Port Testing gave no reason");
+	} else if (code == 401 || code == 403) {
+		text = g_strdup_printf("Port Testing refused Data Bender's service account (HTTP %ld): %s not started", code, j->what);
+	} else if (code == 404) {
+		text = g_strdup_printf("Port Testing has no start for other apps (HTTP 404; it may be stopping or too old): %s not started", j->what);
+	} else {
+		text = g_strdup_printf("Port Testing answered HTTP %ld: %s not started", code, j->what);
+	}
+	LOG("Rule %s: Port Testing: %s\n", j->id, text);
+	pt_log(j->id, j->item, text);
+	PtDone* d = g_new0(PtDone, 1);
+	d->id = g_strdup(j->id);
+	d->text = text;
+	g_idle_add(pt_done, d);
+	g_free(reason);
+	g_free(ans);
+	g_free(err);
+	g_free(j->id); g_free(j->item); g_free(j->body); g_free(j->what);
+	g_free(j);
+}
+
+/* Main loop: the rule fired. Hands the start to the worker, or says why nothing starts. */
+static void pt_fire(Rule* r) {
+	if (!r->ptOn || !r->ptCamera) return;
+	const char* item = r->name && *r->name ? r->name : r->id;
+	gchar* what = pt_what(r);
+	gchar* st = kit_app_status(PT_PACKAGE);
+	gchar* stop = NULL;
+	int check = strcmp(r->ptGame, "check") == 0;
+	if (!st)
+		stop = g_strdup_printf("Port Testing not installed: %s not started", what);
+	else if (strcmp(st, "Running") != 0)
+		stop = g_strdup_printf("Port Testing is not running (%s): %s not started", *st ? st : "Stopped", what);
+	else if (!ptPool || g_thread_pool_unprocessed(ptPool) >= PT_QUEUE_MAX)
+		stop = g_strdup_printf("Port Testing has not answered the last starts yet: %s not started", what);
+	else if (check && !r->ptPort)
+		stop = g_strdup_printf("%s not started: the rule has no port", what);
+	g_free(st);
+	if (stop) {
+		pt_log(r->id, item, stop);
+		pt_set_last(r, stop);
+		g_free(stop);
+		g_free(what);
+		return;
+	}
+	cJSON* b = cJSON_CreateObject();
+	cJSON_AddStringToObject(b, "camera", r->ptCamera);
+	cJSON_AddStringToObject(b, "game", r->ptGame);
+	if (check) {
+		cJSON_AddStringToObject(b, "proto", r->ptProto);
+		cJSON_AddNumberToObject(b, "port", r->ptPort);
+	} else {
+		cJSON_AddNumberToObject(b, "minutes", r->ptMinutes);
+		if (strcmp(r->ptGame, "pong") == 0) cJSON_AddStringToObject(b, "speed", r->ptSpeed);
+		else cJSON_AddBoolToObject(b, "encrypt", r->ptEncrypt);
+	}
+	char* body = cJSON_PrintUnformatted(b);
+	cJSON_Delete(b);
+	PtJob* j = g_new0(PtJob, 1);
+	j->id = g_strdup(r->id);
+	j->item = g_strdup(item);
+	j->body = g_strdup(body ? body : "{}");
+	j->what = what;
+	j->check = check;
+	j->minutes = r->ptMinutes;
+	free(body);
+	g_thread_pool_push(ptPool, j, NULL);
+}
+
+/* GET: Port Testing's devices, for the rule popup's Device list (read from Port Testing's metrics):
+ * {"installed","status","devices":[{"name","state"}],"error"?}. Web thread. */
+static void HTTP_Endpoint_porttesting(const ACAP_HTTP_Response response, const ACAP_HTTP_Request request) {
+	(void)request;
+	cJSON* out = cJSON_CreateObject();
+	gchar* st = kit_app_status(PT_PACKAGE);
+	cJSON_AddBoolToObject(out, "installed", st != NULL);
+	cJSON_AddStringToObject(out, "status", st ? st : "");
+	cJSON* devs = cJSON_AddArrayToObject(out, "devices");
+	if (st && strcmp(st, "Running") == 0) {
+		long code = 0;
+		gchar* err = NULL;
+		gchar* ans = local_call(&vapixLogin, "databender-events", "/local/" PT_PACKAGE "/metrics", NULL, 4L, &code, &err);
+		cJSON* m = ans && code == 200 ? cJSON_Parse(ans) : NULL;
+		cJSON* links = cJSON_GetObjectItem(m, "links");
+		if (cJSON_IsArray(links)) {
+			cJSON* l;
+			cJSON_ArrayForEach(l, links) {
+				const char* name = json_string(l, "camera");
+				if (!name || !*name) continue;
+				cJSON* d = cJSON_CreateObject();
+				cJSON_AddStringToObject(d, "name", name);
+				cJSON_AddStringToObject(d, "state", json_string(l, "state") ? json_string(l, "state") : "");
+				cJSON_AddItemToArray(devs, d);
+			}
+		} else {
+			gchar* why = !ans ? g_strdup_printf("Port Testing did not answer (%s)", err ? err : "no answer")
+			                  : g_strdup_printf("Port Testing answered HTTP %ld", code);
+			cJSON_AddStringToObject(out, "error", why);
+			g_free(why);
+		}
+		cJSON_Delete(m);
+		g_free(ans);
+		g_free(err);
+	}
+	g_free(st);
+	ACAP_HTTP_Respond_JSON(response, out);
+	cJSON_Delete(out);
+}
+
+/* The checks of a rule's portTesting, for an import (the page checks the same before a Save).
+ * NULL when it may be saved, else the reason (g_free). */
+static gchar* pt_problem(cJSON* pt) {
+	if (!cJSON_IsObject(pt)) return g_strdup("its Port Testing setting must be an object.");
+	cJSON* on = cJSON_GetObjectItem(pt, "on");
+	if (on && !cJSON_IsBool(on)) return g_strdup("Port Testing \"on\" must be true or false.");
+	if (!cJSON_IsTrue(on)) return NULL;   /* switched off: kept as it is */
+	const char* cam = json_string(pt, "camera");
+	gchar* c = clean_text(cam, 1000);
+	int noCam = !*c, longCam = g_utf8_strlen(c, -1) > MAX_NAME_CHARS;
+	g_free(c);
+	if (noCam) return g_strdup("Port Testing is switched on but names no device.");
+	if (longCam) return g_strdup_printf("the Port Testing device name is longer than %d characters.", MAX_NAME_CHARS);
+	const char* g = json_string(pt, "game");
+	if (!same_text(g, "pong") && !same_text(g, "battleship") && !same_text(g, "check"))
+		return g_strdup("Port Testing \"game\" must be pong, battleship or check.");
+	if (same_text(g, "check")) {
+		cJSON* p = cJSON_GetObjectItem(pt, "port");
+		const char* pr = json_string(pt, "proto");
+		if (!cJSON_IsNumber(p) || p->valuedouble < 1 || p->valuedouble > 65535 || p->valuedouble != (int)p->valuedouble)
+			return g_strdup("the Port Testing port check needs a port from 1 to 65535.");
+		if (cJSON_GetObjectItem(pt, "proto") && !same_text(pr, "tcp") && !same_text(pr, "udp"))
+			return g_strdup("the Port Testing port check's protocol must be tcp or udp.");
+	} else {
+		cJSON* m = cJSON_GetObjectItem(pt, "minutes");
+		if (m && (!cJSON_IsNumber(m) || m->valuedouble < 1 || m->valuedouble > 15))
+			return g_strdup("a Port Testing match lasts 1 to 15 minutes.");
+		const char* s = json_string(pt, "speed");
+		if (cJSON_GetObjectItem(pt, "speed") && !same_text(s, "slow") && !same_text(s, "normal") && !same_text(s, "fast"))
+			return g_strdup("the Port Testing speed must be slow, normal or fast.");
+		cJSON* e = cJSON_GetObjectItem(pt, "encrypt");
+		if (e && !cJSON_IsBool(e)) return g_strdup("Port Testing \"encrypt\" must be true or false.");
 	}
 	return NULL;
 }
@@ -1434,6 +1753,18 @@ static gchar* Rules_Check(cJSON* value, cJSON* notes) {
 		else if (!cJSON_IsFalse(en) && (!*name || !hasSource))
 			err = g_strdup_printf("%s is switched on but has no %s. Finish it, or switch it off, on the camera it came from, and export again.",
 			                      label, *name ? "source event" : "name");
+		/* Also do: Port Testing (1.6.0). Rules from older versions have none. */
+		cJSON* pt = cJSON_GetObjectItem(it, "portTesting");
+		if (!err && pt && !cJSON_IsNull(pt)) {
+			gchar* why = pt_problem(pt);
+			if (why) err = g_strdup_printf("%s: %s", label, why);
+			else if (cJSON_IsTrue(cJSON_GetObjectItem(pt, "on"))) {
+				gchar* st = kit_app_status(PT_PACKAGE);
+				if (!st) kit_configio_note(notes, "%s starts Port Testing, which isn't installed on this camera. The setting is kept and does nothing until it is.", label);
+				g_free(st);
+			}
+			g_free(why);
+		}
 		if (!err) {
 			/* A rule new to this camera (or with a repeated id) gets its own id */
 			const char* id = json_string(it, "id");
@@ -1515,6 +1846,9 @@ int main(void) {
 	ACAP_EVENTS_SetCallback(Event_Callback);
 	ACAP_HTTP_Node("test", HTTP_Endpoint_test);
 	ACAP_HTTP_Node("preview", HTTP_Endpoint_preview);
+	ACAP_HTTP_Node("porttesting", HTTP_Endpoint_porttesting);
+	/* Also do: Port Testing starts run here, one at a time, so the main loop never waits for them */
+	ptPool = g_thread_pool_new(pt_job, NULL, 1, FALSE, NULL);
 
 	main_loop = g_main_loop_new(NULL, FALSE);
 	GSource* signal_source = g_unix_signal_source_new(SIGTERM);

@@ -89,6 +89,28 @@ A source with no On/Off state (Triggered) has nothing to time.</span></div>
 				<div class="help" id="rd-sent-as"></div>
 				<div class="lbl">Context</div><div class="ctx-line"><code id="rd-ctx-text"></code><button type="button" class="btn" id="rd-ctx-edit">Edit context…</button></div>
 
+				<!-- Also do: start a Port Testing match or check each time the rule fires (rule.portTesting, main.c pt_fire) -->
+				<div class="section">Also do</div>
+				<div class="lbl">Port Testing<span class="kit-help" data-title="Port Testing">Data Bender asks the Port Testing app on this camera to start a match or a port check each time this rule fires. It uses the camera's own service account, so no password is kept.
+Dwell and reactivation apply as for the event, so a busy source doesn't start match after match. If a match is already playing, no second one starts.
+The log shows each result: started, already playing, or why it could not start.</span></div>
+				<div class="pt-cell">
+					<label class="switch pt-switch" id="rd-pt-wrap"><input type="checkbox" id="rd-pt"><span class="track"></span><span>Start a match or a check each time this rule fires</span></label>
+					<span class="hint pt-na" id="rd-pt-na" hidden>Port Testing not installed</span>
+				</div>
+				<div class="lbl" data-pt="on"><label for="rd-pt-dev">Device</label></div>
+				<div class="inline" data-pt="on"><select id="rd-pt-dev"></select><span class="hint" id="rd-pt-devnote"></span></div>
+				<div class="lbl" data-pt="on">What</div>
+				<div data-pt="on"><div class="seg pt-game" id="rd-pt-game" role="group" aria-label="What"><button type="button" data-v="pong">Pong</button><button type="button" data-v="battleship">Battleship</button><button type="button" data-v="check">Port check</button></div></div>
+				<div class="lbl" data-pt="match"><label for="rd-pt-min">For</label></div>
+				<div class="inline" data-pt="match"><input type="text" id="rd-pt-min" inputmode="numeric" class="pt-num"><span>minutes</span><span class="hint">1 to 15</span></div>
+				<div class="lbl" data-pt="pong"><label for="rd-pt-speed">Speed</label></div>
+				<div class="inline" data-pt="pong"><select id="rd-pt-speed"><option value="normal">Normal</option><option value="fast">Fast</option></select></div>
+				<div class="lbl" data-pt="battleship">Encrypt</div>
+				<div data-pt="battleship"><label class="switch"><input type="checkbox" id="rd-pt-enc" aria-label="Encrypt"><span class="track"></span></label></div>
+				<div class="lbl" data-pt="check"><label for="rd-pt-port">Port</label></div>
+				<div class="inline" data-pt="check"><select id="rd-pt-proto" aria-label="Protocol"><option value="tcp">TCP</option><option value="udp">UDP</option></select><input type="text" id="rd-pt-port" inputmode="numeric" class="pt-num pt-port" placeholder="443" aria-label="Port"></div>
+
 				<div class="section">Reactivation threshold</div>
 				<div class="lbl"><label for="rd-wait">Wait before firing again</label><span class="kit-help" data-title="Wait before firing again">After this rule sends an event, new triggers are held back until this time has passed.</span></div>
 				<div class="inline"><input type="text" id="rd-wait" inputmode="decimal" aria-label="Wait"><select id="rd-unit" aria-label="Unit"><option value="1">seconds</option><option value="60">minutes</option><option value="3600">hours</option></select><span class="hint">0 = no wait</span></div>

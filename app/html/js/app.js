@@ -1,6 +1,8 @@
 /*
  * app.js - the Data Bender settings page.
- * Settings: { rules: [{ id, enabled, name, object, send, source }] }
+ * Settings: { rules: [{ id, enabled, name, object, send, source, portTesting? }] }
+ *   portTesting (1.6.0): { on, camera, game: pong|battleship|check, minutes, speed, encrypt, proto, port },
+ *   the rule popup's "Also do" (main.c pt_fire). Rules without it load and save unchanged.
  * Two tabs: Rules, and Settings with the UI kit's "Copy settings to other cameras" panel (Kit.configio).
  * The header, resource bar, camera facts, rules table, Save / Cancel, log, toasts and dialog
  * behaviour are the ACAP UI kit's (kit/acap-kit.js, window.Kit); this file has only Data Bender's own parts.
@@ -383,6 +385,8 @@
 		var dunit = dw && dw % 86400 === 0 ? 86400 : dw && dw % 3600 === 0 ? 3600 : dw && dw % 60 === 0 ? 60 : 1;
 		$('rd-dwell').value = dw / dunit;
 		$('rd-dwell-unit').value = String(dunit);
+		ptFill();   /* before renderRuleParts, which reads the dialog back into the draft */
+		ptLoad();
 		renderRuleParts();
 		ruleModal.open(isNew ? picker.querySelector('input') : $('rd-name'));
 	}
@@ -414,6 +418,147 @@
 		$('rd-dwell').disabled = $('rd-dwell-unit').disabled = !!stateless;
 		var disable = !draft.reactivation.wait;
 		['rd-from', 'rd-held'].forEach(function (id) { $(id).disabled = disable; });
+		readPt();
+	}
+
+	/*--------------------------------------------------
+	 * Also do: Port Testing (1.6.0). Each time the rule fires, Data Bender asks the Port Testing app on this
+	 * camera to start a match or a port check (main.c pt_fire); the log shows the result. The devices come
+	 * from Data Bender's porttesting endpoint (Port Testing's metrics). Without Port Testing the row says so
+	 * and nothing else, and a rule that has the setting keeps it as it is.
+	 *--------------------------------------------------*/
+	var PT_APP = 'port_testing';
+	var PT_GAMES = ['pong', 'battleship', 'check'];
+	var ptList = null;        // { installed, status, devices: [{ name, state }], error? }
+	var ptInstSeen = null;    // the last install state drawn, to redraw when it changes
+
+	/* 'yes', 'no', or 'loading' while the camera's app list is not read yet */
+	function ptInstalled() { return apps === null ? 'loading' : Kit.app(PT_APP) ? 'yes' : 'no'; }
+
+	function ptOf(rule) {
+		var p = (rule && rule.portTesting) || {};
+		var m = Math.round(Number(p.minutes)), port = Math.round(Number(p.port));
+		return { on: p.on === true, camera: typeof p.camera === 'string' ? p.camera.trim() : '',
+		         game: PT_GAMES.indexOf(p.game) >= 0 ? p.game : 'pong',
+		         minutes: m >= 1 && m <= 15 ? m : 2,
+		         speed: p.speed === 'fast' || p.speed === 'slow' ? p.speed : 'normal',
+		         encrypt: p.encrypt === true, proto: p.proto === 'udp' ? 'udp' : 'tcp',
+		         port: port >= 1 && port <= 65535 ? port : 0 };
+	}
+
+	function ptWhat(p) {
+		return p.game === 'check' ? 'port check (' + p.proto.toUpperCase() + ' ' + (p.port || '?') + ')' : p.game === 'battleship' ? 'Battleship' : 'Pong';
+	}
+
+	/* The "How this rule works" paragraph, or null */
+	function ptHow(r) {
+		var p = ptOf(r);
+		if (!p.on) return null;
+		if (ptInstalled() === 'no') return ['Port Testing is not installed, so the ', { b: ptWhat(p) }, ' saved with this rule does nothing until it is.'];
+		if (!p.camera) return ['Pick the device Port Testing should ' + (p.game === 'check' ? 'check' : 'play with') + '.'];
+		if (p.game === 'check') return ['Each time it fires, Data Bender also asks Port Testing to run a ', { b: ptWhat(p) }, ' with ', { b: p.camera }, '. The log shows the result.'];
+		return ['Each time it fires, Data Bender also asks Port Testing to play ', { b: ptWhat(p) }, ' with ', { b: p.camera }, ' for ',
+		        { b: p.minutes + ' minute' + (p.minutes === 1 ? '' : 's') }, '. If a match is already playing, it doesn\'t start a second one, and the log says so.'];
+	}
+
+	function ptGame() { var b = document.querySelector('#rd-pt-game button.on'); return b ? b.dataset.v : 'pong'; }
+	function ptGameSet(g) {
+		document.querySelectorAll('#rd-pt-game button').forEach(function (b) {
+			b.classList.toggle('on', b.dataset.v === g);
+			b.setAttribute('aria-pressed', String(b.dataset.v === g));
+		});
+	}
+
+	/* Not installed: only "Port Testing not installed". Switched on: the rows the chosen game uses. */
+	function ptShow() {
+		var none = ptInstalled() === 'no';
+		ptInstSeen = ptInstalled();
+		$('rd-pt-wrap').hidden = none;
+		$('rd-pt-na').hidden = !none;
+		var on = !none && $('rd-pt').checked, g = ptGame();
+		document.querySelectorAll('#rule-overlay [data-pt]').forEach(function (e) {
+			var k = e.getAttribute('data-pt');
+			e.hidden = !on || (k === 'match' ? g === 'check' : k !== 'on' && k !== g);
+		});
+	}
+
+	/* The Device list: Port Testing's devices, and the rule's own device if Port Testing doesn't list it */
+	function ptDevices(current) {
+		var sel = $('rd-pt-dev'), note = $('rd-pt-devnote');
+		var names = ptList && Array.isArray(ptList.devices) ? ptList.devices.map(function (d) { return d.name; }) : [];
+		sel.textContent = '';
+		names.forEach(function (n) { sel.appendChild(el('option', { value: n }, n)); });
+		var listed = ptList && ptList.installed && ptList.status === 'Running' && !ptList.error;
+		if (current && names.indexOf(current) < 0) sel.appendChild(el('option', { value: current }, current + (listed ? ' (not on Port Testing\'s list)' : '')));
+		if (!sel.options.length) sel.appendChild(el('option', { value: '' }, ptList ? 'No devices on Port Testing' : 'Reading Port Testing\'s devices…'));
+		sel.value = current || names[0] || '';
+		note.textContent = !ptList ? '' : ptList.error ? ptList.error :
+			ptList.installed && ptList.status !== 'Running' ? 'Port Testing is not running, so its devices can\'t be read.' :
+			listed && !names.length ? 'Add one on Port Testing\'s Devices tab.' : '';
+	}
+
+	/* The dialog's Port Testing rows from the rule */
+	function ptFill() {
+		var p = ptOf(draft);
+		$('rd-pt').checked = p.on;
+		ptGameSet(p.game);
+		$('rd-pt-min').value = p.minutes;
+		var sp = $('rd-pt-speed');
+		if (p.speed === 'slow' && !sp.querySelector('option[value="slow"]')) sp.insertBefore(el('option', { value: 'slow' }, 'Slow'), sp.firstChild);
+		sp.value = p.speed;
+		$('rd-pt-enc').checked = p.encrypt;
+		$('rd-pt-proto').value = p.proto;
+		$('rd-pt-port').value = p.port || '';
+		ptDevices(p.camera);
+		ptShow();
+	}
+
+	/* Reads Port Testing's devices again (each time a rule is opened, and when Port Testing comes or goes) */
+	function ptLoad() {
+		if (ptInstalled() === 'no') { ptList = { installed: false, status: '', devices: [] }; return; }
+		fetch('porttesting', { cache: 'no-store' })
+			.then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+			.catch(function (e) { return { installed: true, status: 'Running', devices: [], error: 'Could not read Port Testing\'s devices (' + e.message + ').' }; })
+			.then(function (l) {
+				ptList = l || { devices: [] };
+				if (draft) { ptDevices($('rd-pt-dev').value || ptOf(draft).camera); updateHow(); }
+			});
+	}
+
+	/* The dialog back into the draft. Not installed: the saved setting is kept as it is. A rule that never
+	 * used Port Testing gets nothing, so it saves exactly as before. */
+	function readPt() {
+		if (!draft || ptInstalled() === 'no') return;
+		var on = $('rd-pt').checked;
+		if (!on && !draft.portTesting) return;
+		var m = parseInt($('rd-pt-min').value, 10), port = parseInt($('rd-pt-port').value, 10);
+		draft.portTesting = {
+			on: on, camera: $('rd-pt-dev').value, game: ptGame(),
+			minutes: isFinite(m) ? Math.min(15, Math.max(1, m)) : 2,
+			speed: $('rd-pt-speed').value, encrypt: $('rd-pt-enc').checked,
+			proto: $('rd-pt-proto').value, port: port >= 1 && port <= 65535 ? port : 0
+		};
+	}
+
+	/* For the Status tip: what happened to the last start, or that Port Testing is missing */
+	function ptTip(rule, s) {
+		var p = ptOf(rule);
+		if (!p.on) return '';
+		if (ptInstalled() === 'no') return ' Port Testing is not installed, so the Port Testing start saved with this rule does nothing.';
+		return s && s.portTesting ? ' Port Testing at ' + clock(s.portTestingAt) + ': ' + s.portTesting + '.' : '';
+	}
+
+	/* Save: a Port Testing start that is switched on needs a device, and a port check a port */
+	function ptProblems(rules) {
+		var out = [];
+		if (ptInstalled() === 'no') return out;   /* kept as it is; nothing to fix here */
+		rules.forEach(function (r, i) {
+			var p = ptOf(r);
+			if (!r.portTesting || !p.on) return;
+			if (!p.camera) out.push('rule ' + (i + 1) + ' starts Port Testing but has no device');
+			else if (p.game === 'check' && !p.port) out.push('rule ' + (i + 1) + '\'s port check has no port (1 to 65535)');
+		});
+		return out;
 	}
 
 	function updateHow() {
@@ -459,6 +604,8 @@
 		if (!stateless && dwellOf(r)) out.push(['If it turns ' + (r.send === 'off' ? 'On' : 'Off') + ' again before ', { b: waitText(dwellOf(r)) }, ' have passed, nothing is sent.']);
 		if (!stateless && r.send === 'on') out.push(['When the source turns Off, nothing is sent.']);
 		if (!stateless && r.send === 'off') out.push(['When the source turns On, nothing is sent.']);
+		var pt = ptHow(r);
+		if (pt) out.push(pt);
 
 		var c = ctxOf(r);
 		if (c.text) {
@@ -499,6 +646,12 @@
 		['rd-enabled', 'rd-unit', 'rd-dwell-unit', 'rd-from', 'rd-held'].forEach(function (id) { $(id).addEventListener('change', updateHow); });
 		$('rd-filter').addEventListener('change', updateHow);
 		$('rd-cond').addEventListener('change', updateHow);
+		/* Also do: Port Testing */
+		$('rd-pt').addEventListener('change', function () { ptShow(); updateHow(); });
+		Kit.seg($('rd-pt-game'), function () { ptShow(); updateHow(); });
+		['rd-pt-dev', 'rd-pt-speed', 'rd-pt-enc', 'rd-pt-proto'].forEach(function (id) { $(id).addEventListener('change', updateHow); });
+		['rd-pt-min', 'rd-pt-port'].forEach(function (id) { $(id).addEventListener('input', updateHow); });
+		$('rd-pt-min').addEventListener('blur', function () { if (draft) $('rd-pt-min').value = ptOf(draft).minutes; });
 		$('rd-ctx-edit').addEventListener('click', function () {
 			readDialog();
 			openContext(draft, function () { renderRuleParts(); });
@@ -520,6 +673,12 @@
 
 	/* A rule's status in plain words, a short time or reason next to it, details on hover (for Kit.items) */
 	function statusOf(rule) {
+		var st = statusBase(rule);
+		if (st.word !== 'Not saved' && st.word !== 'Disabled') st.tip += ptTip(rule, ((status.relay || {}).rules || {})[rule.id]);
+		return st;
+	}
+
+	function statusBase(rule) {
 		var s = ((status.relay || {}).rules || {})[rule.id];
 		var missing = eventsLoaded && rule.source && !events.some(function (e) { return e.path === sourcePath(rule.source); });
 		var dirtyRule = !s || !savedIds[rule.id];
@@ -597,6 +756,8 @@
 		var m = {};
 		list.forEach(function (a) { m[normName(a.id)] = { nice: a.name || a.id, status: a.status || '' }; });
 		apps = m;
+		/* Port Testing installed or removed while a rule is open: redraw its row */
+		if (draft && ptInstalled() !== ptInstSeen) { ptShow(); ptLoad(); updateHow(); }
 		renderStatus();
 		recheckEvents();
 	}
@@ -614,6 +775,7 @@
 	 * sent, state, topic, trigger, context and note (main.c log_activity).
 	 *--------------------------------------------------*/
 	function sentCell(a) {
+		if (a.pt) return '<div class="pt-res">Port Testing: ' + Kit.esc(a.pt) + '</div>';   /* Also do (main.c pt_log) */
 		var details = [];
 		var out = '<div class="sent-line">';
 		if (a.sent) {
@@ -639,11 +801,12 @@
 			columns: [
 				{ key: 'received', label: 'Received' },
 				{ key: 'sent', label: 'Sent', cell: sentCell,
-				  text: function (a) { return [a.sent ? a.state + ' ' + a.sent : 'Nothing sent', a.context, a.note].filter(Boolean).join(' · '); },
+				  text: function (a) { return a.pt ? 'Port Testing: ' + a.pt : [a.sent ? a.state + ' ' + a.sent : 'Nothing sent', a.context, a.note].filter(Boolean).join(' · '); },
 				  options: [
 					{ v: 'On', label: 'On', match: function (a) { return !!a.sent && a.state === 'On'; } },
 					{ v: 'Off', label: 'Off', match: function (a) { return !!a.sent && a.state === 'Off'; } },
-					{ v: 'none', label: 'Nothing sent', match: function (a) { return !a.sent; } }
+					{ v: 'none', label: 'Nothing sent', match: function (a) { return !a.sent && !a.pt; } },
+					{ v: 'pt', label: 'Port Testing', match: function (a) { return !!a.pt; } }
 				  ] }
 			],
 			/* The Workflow view's "Show last trigger": each rule's newest line that came from its source */
@@ -1094,18 +1257,22 @@
 			if (!r.source) problems.push('rule ' + (i + 1) + ' has no source event');
 			if (!(r.name || '').trim()) problems.push('rule ' + (i + 1) + ' has no name');
 		});
+		problems = problems.concat(ptProblems(settings.rules));
 		/* Run by the kit's Save button: a problem is thrown, and the kit shows it */
 		if (problems.length) return Promise.reject(new Error(problems.join(', ') + '. Finish it, or switch it off to save it unfinished.'));
 
 		var body = {
 			rules: settings.rules.map(function (r) {
 				var f = ruleFilter(r);
-				return { id: r.id, enabled: r.enabled !== false, name: (r.name || '').trim(), object: '',
+				var o = { id: r.id, enabled: r.enabled !== false, name: (r.name || '').trim(), object: '',
 				         filter: f ? { key: f.key, value: f.value, match: f.match } : null,
 				         send: (r.send === 'on' || r.send === 'off') ? r.send : 'both', source: r.source || null,
 				         context: r.context && r.context.text ? r.context : null,
 				         dwell: dwellOf(r) || null,
 				         reactivation: reOf(r).wait ? reOf(r) : null };
+				/* Also do: only rules that have it (older rules save exactly as before) */
+				if (r.portTesting) o.portTesting = r.portTesting;
+				return o;
 			})
 		};
 		return post('settings', JSON.stringify(body))
