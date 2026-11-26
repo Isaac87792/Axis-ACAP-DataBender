@@ -1,5 +1,5 @@
 /*
- * acap-kit.js 1.4.1 - the shared parts of every one of these ACAP pages. Copy html/kit/ unchanged.
+ * acap-kit.js 1.4.2 - the shared parts of every one of these ACAP pages. Copy html/kit/ unchanged.
  * Needs acap-kit.css (and kit/acap-theme.js first in <head>, so the page starts in the right theme), and the camera side (kit.h, kit_*.c) for the resources, processes, apps
  * and log endpoints. No libraries.
  *
@@ -30,7 +30,7 @@
 (function () {
 'use strict';
 
-const VERSION = '1.4.1';   /* the same as KIT_VERSION in kit.h */
+const VERSION = '1.4.2';   /* the same as KIT_VERSION in kit.h */
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

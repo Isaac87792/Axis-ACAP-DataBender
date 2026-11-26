@@ -21,7 +21,7 @@
 #include <glib.h>
 #include "cJSON.h"
 
-#define KIT_VERSION "1.4.1"   /* the same in acap-kit.js and acap-kit.css; the page shows it on hover over the version */
+#define KIT_VERSION "1.4.2"   /* the same in acap-kit.js and acap-kit.css; the page shows it on hover over the version */
 
 void kit_init(const char* appPackage, const char* appName);
 

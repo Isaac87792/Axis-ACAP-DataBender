@@ -1,5 +1,5 @@
 /*
- * acap-kit.css 1.4.1 - the shared look and parts of every one of these ACAP pages.
+ * acap-kit.css 1.4.2 - the shared look and parts of every one of these ACAP pages.
  * Copy html/kit/ unchanged into each ACAP; page-specific styles go in the app's own css/app.css.
  *
  * Look: the "fluent" look of AXIS Object Analytics and AXIS OS 12 (values modeled on Axis's own apps):
@@ -272,7 +272,16 @@ button.acap-ver:hover, button.acap-ver.open { color: var(--text); border-color: 
 .rb[aria-expanded="true"] { border-color: var(--brand-edge); color: var(--text); }
 .rb b { color: var(--text); font-weight: 600; }
 .rb em { font-style: normal; color: var(--kit-c-apps-text); font-weight: 600; }   /* the apps' share */
-.rb em:empty { display: none; }
+/* 1.4.2: steady widths, so the bar does not move sideways when a number changes ("9 %" and "100 %",
+ * "53 kbit/s" and "12.3 Mbit/s" take the same room): even-width digits and a minimum width per value */
+.rb b, .rb em { display: inline-block; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.rb b { min-width: 5.5ch; }
+.rb em { min-width: 6.5ch; }
+.rb[data-k="mem"] em { min-width: 8ch; }
+.rb[data-k="net"] b { min-width: 12ch; }
+.rb[data-k="temp"] b { min-width: 8ch; }
+.rb[data-k="sd"] b { min-width: 7.5ch; }
+.rb em:empty, .rb[data-k] em:empty { display: none; }
 .rb.bad b { color: var(--danger); }
 .meter { position: relative; width: 54px; height: 6px; border-radius: 3px; background: var(--kit-c-free); border: 1px solid var(--stroke-soft); overflow: hidden; flex: none; }
 .meter .m-cam, .meter .m-app { position: absolute; top: 0; bottom: 0; left: 0; width: 0; transition: width .4s; }
