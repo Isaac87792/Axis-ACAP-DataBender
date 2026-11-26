@@ -22,7 +22,7 @@ One line per rule: an On switch, the rule's name and summary, its source app wit
 ![Rules table](docs/screenshots/rules.png)
 
 ### Rule editor
-Every setting of a rule in one dialog: the source event (search the camera's own event list), a filter (for example only cars, or only input port 1), On, Off or both, a dwell time, the name to send, a **Context** text with fields and formulas such as `Person #{count} today at the gate`, a Port Testing match or port check to start each time the rule fires (**Also do**), and a wait before firing again. "How this rule works" says it back in plain words.
+Every setting of a rule in one dialog: the source event (search the camera's own event list), a filter (for example only cars, or only input port 1), On, Off or both, a dwell time, the name to send, a **Context** text with fields and formulas such as `Person #{count} today at the gate`, a [Port Testing](https://github.com/Isaac87792/Axis-ACAP-PortTesting) match or port check to start each time the rule fires (**Also do**), and a wait before firing again. "How this rule works" says it back in plain words.
 
 ![Rule editor](docs/screenshots/rule-editor.png)
 
@@ -42,7 +42,7 @@ On the Settings tab: **Export** the rules to a file, **Import** it on another ca
 ![Import: the file's details, Replace or Merge, and a preview of the changes](docs/screenshots/copy-settings.png)
 
 ### Resource bar
-The top of the page shows the camera's CPU, memory, storage, SD card, network and temperature, with the camera in grey and the installed apps in yellow. Click a reading for details, such as the processes using the most CPU. When Resource Monitor is installed, a link opens its graphs.
+The top of the page shows the camera's CPU, memory, storage, SD card, network and temperature, with the camera in grey and the installed apps in yellow. Click a reading for details, such as the processes using the most CPU. When [Resource Monitor](https://github.com/Isaac87792/Axis-ACAP-ResourceMonitor) is installed, a link opens its graphs.
 
 ![Resource bar with the CPU details open](docs/screenshots/resource-bar.png)
 
@@ -54,7 +54,7 @@ Data Bender and [Resource Monitor](https://github.com/Isaac87792/Axis-ACAP-Resou
 - **Set up many cameras the same way.** Both have "Copy settings to other cameras" with the same file format, Replace or Merge, a preview and Undo. Build the rules and alerts on one camera, then copy both apps' settings to the rest.
 
 ## Works with Port Testing
-When the Port Testing app runs on the same camera, a rule can also start a match (Pong or Battleship, 1 to 15 minutes) or a port check with one of Port Testing's devices each time it fires, for example to test the link to another camera when a door opens.
+When the [Port Testing](https://github.com/Isaac87792/Axis-ACAP-PortTesting) app runs on the same camera, a rule can also start a match (Pong or Battleship, 1 to 15 minutes) or a port check with one of Port Testing's devices each time it fires, for example to test the link to another camera when a door opens.
 - **No password kept.** Data Bender asks Port Testing on the camera itself, with the camera's own service account.
 - **Same rules as the event.** The dwell time and the wait before firing again apply, and no second match starts while one is playing.
 - **In the log.** Each result is there in plain words: started, already playing, or why it could not start.
